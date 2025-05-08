@@ -1,7 +1,8 @@
 import { io } from "socket.io-client"
+import { SERVER_URL } from "./constants"
 
-// Replace with your actual IP address
-const SERVER_URL = "http://localhost:5000" // Change this to your computer's IP address
+
+
 
 // Create socket connection
 
