@@ -1,7 +1,7 @@
 "use client"
 
 import { Ionicons } from "@expo/vector-icons"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
@@ -14,11 +14,39 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
+import AudioRecorder from "../components/AudioRecorder"
 import ChatBubble from "../components/ChatBubble"
 import ConnectionStatus from "../components/ConnectionStatus"
 import EmptyChat from "../components/EmptyChat"
+import ImagePicker from "../components/ImagePicker"
 import TypingIndicator from "../components/TypingIndicator"
+import { SERVER_URL } from "../utils/constants"
 import { emitStopTyping, emitTyping, socket } from "../utils/socket"
+
+// Define fallback functions in case the imported ones are undefined
+const safeEmitTyping = (data) => {
+  try {
+    if (typeof emitTyping === "function") {
+      emitTyping(data)
+    } else {
+      socket.emit("typing", data)
+    }
+  } catch (error) {
+    console.error("Error emitting typing event:", error)
+  }
+}
+
+const safeEmitStopTyping = (data) => {
+  try {
+    if (typeof emitStopTyping === "function") {
+      emitStopTyping(data)
+    } else {
+      socket.emit("stopTyping", data)
+    }
+  } catch (error) {
+    console.error("Error emitting stopTyping event:", error)
+  }
+}
 
 const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
   const [messages, setMessages] = useState([])
@@ -27,91 +55,141 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
   const [isTyping, setIsTyping] = useState(false)
   const [error, setError] = useState(null)
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
+  const [showImagePicker, setShowImagePicker] = useState(false)
+  const [showAudioRecorder, setShowAudioRecorder] = useState(false)
   const flatListRef = useRef(null)
   const typingTimeoutRef = useRef(null)
+  const isMounted = useRef(true)
+
+  // Get user names based on user type
+  const currentUserName = userType === "farmer" ? "Dawood" : "Abdurehman"
+  const otherUserName = userType === "farmer" ? "Abdurehman" : "Dawood"
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMounted.current = false
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [ ])
 
   // Fetch previous messages
   useEffect(() => {
     const fetchMessages = async () => {
       try {
+        if (!isMounted.current) return
+
         setLoading(true)
         setError(null)
-        const response = await fetch(`http://192.168.177.76:5000/api/messages/${currentUserId}/${otherUserId}`)
+
+        console.log(`Fetching messages between ${currentUserId} and ${otherUserId}`)
+
+        // Check if IDs are valid
+        if (!currentUserId || !otherUserId) {
+          throw new Error("Invalid user IDs")
+        }
+
+        const response = await fetch(`${SERVER_URL}/api/messages/${currentUserId}/${otherUserId}`)
 
         if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          console.error("Error response:", errorData)
           throw new Error(`Failed to fetch messages: ${response.status}`)
         }
 
         const data = await response.json()
-        setMessages(data)
+        console.log(`Fetched ${data.length} messages`)
+
+        if (isMounted.current) {
+          setMessages(data)
+          setLoading(false)
+        }
       } catch (error) {
         console.error("Error fetching messages:", error)
-        setError("Failed to load messages. Please try again.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchMessages()
-  }, [currentUserId, otherUserId])
-
-  // Socket connection
-  useEffect(() => {
-    // Join the chat
-    socket.emit("join", currentUserId)
-
-    // Listen for incoming messages
-    socket.on("receiveMessage", (data) => {
-      if (data.senderId === otherUserId) {
-        const newMessage = {
-          senderId: data.senderId,
-          receiverId: currentUserId,
-          messageType: "text",
-          content: data.message,
-          timestamp: new Date(),
-          _id: Date.now().toString(), // temporary id
+        if (isMounted.current) {
+          setError("Failed to load messages. Please try again.")
+          setLoading(false)
         }
-
-        setMessages((prevMessages) => [...prevMessages, newMessage])
-        // Reset typing indicator when message is received
-        setIsOtherUserTyping(false)
       }
-    })
+    }
 
-    // Listen for typing indicators
-    socket.on("userTyping", (data) => {
-      if (data.senderId === otherUserId && data.receiverId === currentUserId) {
-        setIsOtherUserTyping(true)
-      }
-    })
-
-    socket.on("userStoppedTyping", (data) => {
-      if (data.senderId === otherUserId && data.receiverId === currentUserId) {
-        setIsOtherUserTyping(false)
-      }
-    })
-
-    return () => {
-      socket.off("receiveMessage")
-      socket.off("userTyping")
-      socket.off("userStoppedTyping")
+    if (currentUserId && otherUserId) {
+      fetchMessages()
+    } else {
+      setLoading(false)
+      setError("Invalid user IDs. Please go back and try again.")
     }
   }, [currentUserId, otherUserId])
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
+  // Add memoized callbacks
+  const scrollToBottom = useCallback(() => {
+    if (flatListRef.current) {
       setTimeout(() => {
-        flatListRef.current.scrollToEnd({ animated: true })
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: true })
+        }
       }, 100)
     }
-  }, [messages])
+  }, [])
+
+  const handleReceiveMessage = useCallback((data) => {
+    if (data.senderId === otherUserId) {
+      setMessages(prevMessages => [...prevMessages, {
+        senderId: data.senderId,
+        receiverId: currentUserId,
+        messageType: data.messageType || "text",
+        content: data.message,
+        timestamp: new Date(),
+        _id: Date.now().toString()
+      }])
+      setIsOtherUserTyping(false)
+    }
+  }, [currentUserId, otherUserId])
+
+  const handleUserTyping = useCallback((data) => {
+    if (data.senderId === otherUserId && data.receiverId === currentUserId) {
+      setIsOtherUserTyping(true)
+    }
+  }, [currentUserId, otherUserId])
+
+  const handleUserStoppedTyping = useCallback((data) => {
+    if (data.senderId === otherUserId && data.receiverId === currentUserId) {
+      setIsOtherUserTyping(false)
+    }
+  }, [currentUserId, otherUserId])
+
+  // Socket connection effect with memoized handlers
+  useEffect(() => {
+    if (!currentUserId || !socket) return
+
+    // Join the chat only once when component mounts
+    socket.emit("join", currentUserId)
+
+    socket.on("receiveMessage", handleReceiveMessage)
+    socket.on("userTyping", handleUserTyping)
+    socket.on("userStoppedTyping", handleUserStoppedTyping)
+
+    return () => {
+      socket.off("receiveMessage", handleReceiveMessage)
+      socket.off("userTyping", handleUserTyping)
+      socket.off("userStoppedTyping", handleUserStoppedTyping)
+    }
+  }, [currentUserId, handleReceiveMessage, handleUserTyping, handleUserStoppedTyping])
+
+  // Scroll effect with memoized callback
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom()
+    }
+  }, [messages, scrollToBottom])
 
   // Handle typing indicator
   const handleTyping = () => {
     if (!isTyping) {
       setIsTyping(true)
-      emitTyping({
+      safeEmitTyping({
         senderId: currentUserId,
         receiverId: otherUserId,
       })
@@ -125,14 +203,14 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
     // Set new timeout
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false)
-      emitStopTyping({
+      safeEmitStopTyping({
         senderId: currentUserId,
         receiverId: otherUserId,
       })
     }, 2000)
   }
 
-  const sendMessage = async () => {
+  const sendTextMessage = async () => {
     if (inputMessage.trim() === "") return
 
     // Clear typing timeout and indicator
@@ -140,7 +218,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       clearTimeout(typingTimeoutRef.current)
     }
     setIsTyping(false)
-    emitStopTyping({
+    safeEmitStopTyping({
       senderId: currentUserId,
       receiverId: otherUserId,
     })
@@ -151,12 +229,11 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       receiverId: otherUserId,
       messageType: "text",
       content: inputMessage,
-      timestamp: new Date(),
     }
 
     // Add to local state immediately with a temporary ID
     const tempId = Date.now().toString()
-    const messageWithTempId = { ...newMessage, _id: tempId, pending: true }
+    const messageWithTempId = { ...newMessage, _id: tempId, pending: true, timestamp: new Date() }
     setMessages((prevMessages) => [...prevMessages, messageWithTempId])
 
     // Clear input
@@ -164,7 +241,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
 
     // Send to server
     try {
-      const response = await fetch("http://192.168.177.76:5000/api/messages/text", {
+      const response = await fetch(`${SERVER_URL}/api/messages/text`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -173,6 +250,8 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       })
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error("Error response:", errorData)
         throw new Error(`Failed to send message: ${response.status}`)
       }
 
@@ -188,6 +267,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
         senderId: currentUserId,
         receiverId: otherUserId,
         message: inputMessage,
+        messageType: "text",
       })
     } catch (error) {
       console.error("Error sending message:", error)
@@ -201,12 +281,221 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
     }
   }
 
+  const sendImageMessage = async (imageData) => {
+    if (!imageData || !imageData.uri) {
+      setShowImagePicker(false)
+      return
+    }
+
+    console.log("Sending image data:", imageData)
+
+    // Create a temporary message for UI feedback
+    const tempId = Date.now().toString()
+    const tempMessage = {
+      _id: tempId,
+      senderId: currentUserId,
+      receiverId: otherUserId,
+      messageType: "image",
+      content: imageData.uri,
+      timestamp: new Date(),
+      pending: true,
+    }
+
+    // Add to local state
+    setMessages((prevMessages) => [...prevMessages, tempMessage])
+
+    // Hide image picker
+    setShowImagePicker(false)
+
+    try {
+      // Create form data for file upload
+      const formData = new FormData()
+
+      if (Platform.OS === 'web' && imageData.file) {
+        // For web, use the actual File object
+        formData.append('file', imageData.file)
+      } else {
+        // For mobile, create a file object
+        const file = {
+          uri: Platform.OS === "ios" ? imageData.uri.replace("file://", "") : imageData.uri,
+          type: imageData.type || 'image/jpeg',
+          name: imageData.name || 'photo.jpg'
+        }
+        formData.append('file', file)
+      }
+
+      // Add other required data
+      formData.append("senderId", currentUserId)
+      formData.append("receiverId", otherUserId)
+      formData.append("messageType", "image")
+
+      console.log("Sending form data with file:", {
+        senderId: currentUserId,
+        receiverId: otherUserId,
+        messageType: "image",
+        fileName: imageData.name || 'photo.jpg'
+      })
+
+      // Send to server
+      const response = await fetch(`${SERVER_URL}/api/messages/media`, {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Server response:", errorText)
+        throw new Error(`Failed to send image: ${response.status}`)
+      }
+
+      const savedMessage = await response.json()
+      console.log("Saved message:", savedMessage)
+
+      // Update message in state
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => (msg._id === tempId ? { ...savedMessage, pending: false } : msg))
+      )
+
+      // Notify other user via socket
+      socket.emit("sendMessage", {
+        senderId: currentUserId,
+        receiverId: otherUserId,
+        message: savedMessage.content,
+        messageType: "image",
+      })
+
+      // Clean up object URL if it was created (web platform)
+      if (Platform.OS === 'web' && imageData.uri.startsWith('blob:')) {
+        URL.revokeObjectURL(imageData.uri)
+      }
+    } catch (error) {
+      console.error("Error sending image:", error)
+
+      // Mark message as failed
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => (msg._id === tempId ? { ...msg, failed: true, pending: false } : msg))
+      )
+
+      Alert.alert("Error", "Failed to send image. Please try again.")
+    }
+  }
+
+  const sendAudioMessage = async (audioData) => {
+    if (!audioData || !audioData.uri) {
+      setShowAudioRecorder(false)
+      return
+    }
+
+    console.log("Sending audio:", audioData.uri)
+
+    // Create a temporary message for UI feedback
+    const tempId = Date.now().toString()
+    const tempMessage = {
+      _id: tempId,
+      senderId: currentUserId,
+      receiverId: otherUserId,
+      messageType: "audio",
+      content: audioData.uri, // Temporary local URI
+      timestamp: new Date(),
+      pending: true,
+    }
+
+    // Add to local state
+    setMessages((prevMessages) => [...prevMessages, tempMessage])
+
+    // Hide audio recorder
+    setShowAudioRecorder(false)
+
+    try {
+      // Get file info
+      const uriParts = audioData.uri.split(".")
+      const fileType = uriParts[uriParts.length - 1] || "m4a"
+
+      // Create form data for file upload
+      const formData = new FormData()
+
+      // Add the file
+      formData.append("file", {
+        uri: audioData.uri,
+        name: `audio.${fileType}`,
+        type: `audio/${fileType}`,
+      })
+
+      // Add other data
+      formData.append("senderId", currentUserId)
+      formData.append("receiverId", otherUserId)
+      formData.append("messageType", "audio")
+
+      console.log(
+        "Sending form data:",
+        JSON.stringify({
+          senderId: currentUserId,
+          receiverId: otherUserId,
+          messageType: "audio",
+          fileInfo: {
+            uri: audioData.uri.substring(0, 50) + "...", // Truncate for logging
+            name: `audio.${fileType}`,
+            type: `audio/${fileType}`,
+          },
+        }),
+      )
+
+      // Send to server
+      const response = await fetch(`${SERVER_URL}/api/messages/media`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Server response:", errorText)
+        throw new Error(`Failed to send audio: ${response.status}`)
+      }
+
+      const savedMessage = await response.json()
+      console.log("Saved message:", savedMessage)
+
+      // Update message in state
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => (msg._id === tempId ? { ...savedMessage, pending: false } : msg)),
+      )
+
+      // Notify other user via socket
+      socket.emit("sendMessage", {
+        senderId: currentUserId,
+        receiverId: otherUserId,
+        message: savedMessage.content,
+        messageType: "audio",
+      })
+    } catch (error) {
+      console.error("Error sending audio:", error)
+
+      // Mark message as failed
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => (msg._id === tempId ? { ...msg, failed: true, pending: false } : msg)),
+      )
+
+      Alert.alert("Error", "Failed to send audio. Please try again.")
+    }
+  }
+
   const retryMessage = (failedMessage) => {
     // Remove the failed message
     setMessages((prevMessages) => prevMessages.filter((msg) => msg._id !== failedMessage._id))
 
-    // Set the content back to input
-    setInputMessage(failedMessage.content)
+    // Retry based on message type
+    if (failedMessage.messageType === "text") {
+      setInputMessage(failedMessage.content)
+    } else if (failedMessage.messageType === "image") {
+      Alert.alert("Retry", "Please select the image again.")
+      setShowImagePicker(true)
+    } else if (failedMessage.messageType === "audio") {
+      Alert.alert("Retry", "Please record the audio again.")
+      setShowAudioRecorder(true)
+    }
   }
 
   // Render loading state
@@ -239,7 +528,12 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{userType === "farmer" ? "Chat with Expert" : "Chat with Farmer"}</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>
+            {otherUserName} {userType === "farmer" ? "(Expert)" : "(Farmer)"}
+          </Text>
+          <Text style={styles.headerSubtitle}>You: {currentUserName}</Text>
+        </View>
         <View style={styles.statusIndicator}>
           <View style={styles.onlineDot} />
           <Text style={styles.statusText}>Online</Text>
@@ -271,27 +565,56 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
 
       {isOtherUserTyping && <TypingIndicator />}
 
+      {/* Media Pickers */}
+      {showImagePicker && <ImagePicker onImageSelected={sendImageMessage} onCancel={() => setShowImagePicker(false)} />}
+
+      {showAudioRecorder && (
+        <AudioRecorder onAudioRecorded={sendAudioMessage} onCancel={() => setShowAudioRecorder(false)} />
+      )}
+
       {/* Input Area - Always visible */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={inputMessage}
-          onChangeText={(text) => {
-            setInputMessage(text)
-            handleTyping()
-          }}
-          placeholder="Type a message..."
-          placeholderTextColor="#999"
-          multiline
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, inputMessage.trim() === "" ? styles.sendButtonDisabled : null]}
-          onPress={sendMessage}
-          disabled={inputMessage.trim() === ""}
-        >
-          <Ionicons name="send" size={24} color={inputMessage.trim() === "" ? "#CCCCCC" : "white"} />
-        </TouchableOpacity>
-      </View>
+      {!showImagePicker && !showAudioRecorder && (
+        <View style={styles.inputContainer}>
+          <View style={styles.mediaButtons}>
+            <TouchableOpacity
+              style={styles.mediaButton}
+              onPress={() => {
+                setShowImagePicker(true)
+                setShowAudioRecorder(false)
+              }}
+            >
+              <Ionicons name="image" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mediaButton}
+              onPress={() => {
+                setShowAudioRecorder(true)
+                setShowImagePicker(false)
+              }}
+            >
+              <Ionicons name="mic" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.input}
+            value={inputMessage}
+            onChangeText={(text) => {
+              setInputMessage(text)
+              handleTyping()
+            }}
+            placeholder="Type a message..."
+            placeholderTextColor="#999"
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendButton, inputMessage.trim() === "" ? styles.sendButtonDisabled : null]}
+            onPress={sendTextMessage}
+            disabled={inputMessage.trim() === ""}
+          >
+            <Ionicons name="send" size={24} color={inputMessage.trim() === "" ? "#CCCCCC" : "white"} />
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   )
 }
@@ -313,10 +636,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
   },
+  headerContent: {
+    flex: 1,
+  },
   headerTitle: {
     color: "white",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  headerSubtitle: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 12,
+    marginTop: 2,
   },
   statusIndicator: {
     flexDirection: "row",
@@ -382,6 +713,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#E0E0E0",
     alignItems: "center",
+  },
+  mediaButtons: {
+    flexDirection: "row",
+    marginRight: 8,
+  },
+  mediaButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F0F0F0",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 4,
   },
   input: {
     flex: 1,

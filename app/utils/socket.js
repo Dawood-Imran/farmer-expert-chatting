@@ -1,7 +1,11 @@
 import { io } from "socket.io-client"
 
+// Replace with your actual IP address
+const SERVER_URL = "http://localhost:5000" // Change this to your computer's IP address
+
 // Create socket connection
-export const socket = io("http://192.168.177.76:5000", {
+
+export const socket = io(SERVER_URL, {
   transports: ["websocket"],
   autoConnect: true,
   reconnection: true,

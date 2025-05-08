@@ -50,33 +50,7 @@ export default function TabOneScreen() {
 
         <Image source={{ uri: "/uploads/images/1746679008632.jpg" }} style={styles.image} resizeMode="cover" />
 
-        <View style={styles.featuresContainer}>
-          <Text style={styles.featuresTitle}>Features</Text>
-
-          <View style={styles.featureItem}>
-            <Ionicons name="chatbubble-ellipses" size={24} color="#4CAF50" />
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>Real-time Chat</Text>
-              <Text style={styles.featureDescription}>Instant messaging between farmers and agricultural experts</Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <Ionicons name="image" size={24} color="#4CAF50" />
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>Image Sharing</Text>
-              <Text style={styles.featureDescription}>Share photos of crops, soil, or issues for better diagnosis</Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <Ionicons name="mic" size={24} color="#4CAF50" />
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>Voice Messages</Text>
-              <Text style={styles.featureDescription}>Send audio messages for easier communication</Text>
-            </View>
-          </View>
-        </View>
+        
 
         <View style={styles.buttonContainer}>
           <TouchableOpacity
