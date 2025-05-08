@@ -1,75 +1,255 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+"use client"
+import { Ionicons } from "@expo/vector-icons"
+import { useRouter } from "expo-router"
+import { useState } from "react"
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+export default function TabOneScreen() {
+  const router = useRouter()
+  const [isConnecting, setIsConnecting] = useState(false)
 
-export default function HomeScreen() {
+  // Dummy IDs for testing
+  const dummyFarmerId = "60d0fe4f5311236168a109ca"
+  const dummyExpertId = "60d0fe4f5311236168a109cb"
+
+  const navigateToFarmerChat = () => {
+    setIsConnecting(true)
+    setTimeout(() => {
+      setIsConnecting(false)
+      router.push({
+        pathname: "/farmer-chat",
+        params: {
+          farmerId: dummyFarmerId,
+          expertId: dummyExpertId,
+        },
+      })
+    }, 1000)
+  }
+
+  const navigateToExpertChat = () => {
+    setIsConnecting(true)
+    setTimeout(() => {
+      setIsConnecting(false)
+      router.push({
+        pathname: "/expert-chat",
+        params: {
+          farmerId: dummyFarmerId,
+          expertId: dummyExpertId,
+        },
+      })
+    }, 1000)
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+    <ScrollView style={styles.scrollView}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Agricultural Chat App</Text>
+          <Text style={styles.subtitle}>Connect Farmers with Experts</Text>
+        </View>
+
+        <Image source={{ uri: "/uploads/images/1746679008632.jpg" }} style={styles.image} resizeMode="cover" />
+
+        <View style={styles.featuresContainer}>
+          <Text style={styles.featuresTitle}>Features</Text>
+
+          <View style={styles.featureItem}>
+            <Ionicons name="chatbubble-ellipses" size={24} color="#4CAF50" />
+            <View style={styles.featureTextContainer}>
+              <Text style={styles.featureTitle}>Real-time Chat</Text>
+              <Text style={styles.featureDescription}>Instant messaging between farmers and agricultural experts</Text>
+            </View>
+          </View>
+
+          <View style={styles.featureItem}>
+            <Ionicons name="image" size={24} color="#4CAF50" />
+            <View style={styles.featureTextContainer}>
+              <Text style={styles.featureTitle}>Image Sharing</Text>
+              <Text style={styles.featureDescription}>Share photos of crops, soil, or issues for better diagnosis</Text>
+            </View>
+          </View>
+
+          <View style={styles.featureItem}>
+            <Ionicons name="mic" size={24} color="#4CAF50" />
+            <View style={styles.featureTextContainer}>
+              <Text style={styles.featureTitle}>Voice Messages</Text>
+              <Text style={styles.featureDescription}>Send audio messages for easier communication</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.farmerButton, isConnecting && styles.buttonDisabled]}
+            onPress={navigateToFarmerChat}
+            disabled={isConnecting}
+          >
+            {isConnecting ? (
+              <View style={styles.buttonContent}>
+                <ActivityIndicator size="small" color="white" />
+                <Text style={styles.buttonText}>Connecting...</Text>
+              </View>
+            ) : (
+              <View style={styles.buttonContent}>
+                <Ionicons name="leaf" size={20} color="white" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Continue as Farmer</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.expertButton, isConnecting && styles.buttonDisabled]}
+            onPress={navigateToExpertChat}
+            disabled={isConnecting}
+          >
+            {isConnecting ? (
+              <View style={styles.buttonContent}>
+                <ActivityIndicator size="small" color="white" />
+                <Text style={styles.buttonText}>Connecting...</Text>
+              </View>
+            ) : (
+              <View style={styles.buttonContent}>
+                <Ionicons name="school" size={20} color="white" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Continue as Expert</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoText}>
+            This platform connects farmers with agricultural experts for real-time consultation and advice. Get
+            immediate help with crop issues, soil management, pest control, and more.
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
+  )
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  container: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  header: {
+    alignItems: "center",
+    marginVertical: 24,
   },
-});
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#2E7D32",
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#666",
+    marginTop: 8,
+  },
+  image: {
+    width: "100%",
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  featuresContainer: {
+    width: "100%",
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  featuresTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 16,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  featureTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  featureDescription: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+  },
+  buttonContainer: {
+    width: "100%",
+    gap: 16,
+  },
+  button: {
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  buttonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
+  farmerButton: {
+    backgroundColor: "#4CAF50",
+  },
+  expertButton: {
+    backgroundColor: "#2196F3",
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  infoContainer: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: "white",
+    borderRadius: 10,
+    width: "100%",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  infoText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+})
