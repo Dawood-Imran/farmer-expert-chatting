@@ -287,7 +287,12 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       return
     }
 
-    console.log("Sending image data:", imageData)
+    console.log("Sending image data:", {
+      uri: imageData.uri,
+      type: imageData.type,
+      name: imageData.name,
+      fileSize: imageData.file?.size
+    })
 
     // Create a temporary message for UI feedback
     const tempId = Date.now().toString()
@@ -313,6 +318,11 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
 
       if (Platform.OS === 'web' && imageData.file) {
         // For web, use the actual File object
+        console.log('Appending web file:', {
+          name: imageData.file.name,
+          type: imageData.file.type,
+          size: imageData.file.size
+        })
         formData.append('file', imageData.file)
       } else {
         // For mobile platforms
@@ -320,23 +330,17 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
           ? imageData.uri 
           : imageData.uri.replace('file://', '')
         
-        // Get file name from URI
-        const fileName = fileUri.split('/').pop() || 'photo.jpg'
-        
-        // Create file object for mobile
-        const file = {
+        console.log('Appending mobile file:', {
           uri: fileUri,
-          type: imageData.type || 'image/jpeg',
-          name: fileName
-        }
-        
-        console.log('Creating form data with file:', {
-          uri: fileUri,
-          type: file.type,
-          name: file.name
+          type: imageData.type,
+          name: imageData.name
         })
         
-        formData.append('file', file)
+        formData.append('file', {
+          uri: fileUri,
+          type: imageData.type || 'image/jpeg',
+          name: imageData.name || `image-${Date.now()}.jpg`
+        })
       }
 
       // Add other required data
@@ -344,20 +348,20 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       formData.append("receiverId", otherUserId)
       formData.append("messageType", "image")
 
-      console.log("Sending form data with file:", {
+      console.log("Sending form data:", {
         senderId: currentUserId,
         receiverId: otherUserId,
-        messageType: "image",
+        messageType: "image"
       })
 
       // Send to server
       const response = await fetch(`${SERVER_URL}/api/messages/media`, {
         method: "POST",
         body: formData,
-        headers: {
+        headers: Platform.OS === 'web' ? undefined : {
           'Accept': 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
+          'Content-Type': 'multipart/form-data'
+        }
       })
 
       if (!response.ok) {
@@ -404,7 +408,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       return
     }
 
-    console.log("Sending audio:", audioData.uri)
+    console.log("Sending audio data:", audioData)
 
     // Create a temporary message for UI feedback
     const tempId = Date.now().toString()
@@ -413,7 +417,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
       senderId: currentUserId,
       receiverId: otherUserId,
       messageType: "audio",
-      content: audioData.uri, // Temporary local URI
+      content: audioData.uri,
       timestamp: new Date(),
       pending: true,
     }
@@ -425,46 +429,50 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
     setShowAudioRecorder(false)
 
     try {
-      // Get file info
-      const uriParts = audioData.uri.split(".")
-      const fileType = uriParts[uriParts.length - 1] || "m4a"
-
       // Create form data for file upload
       const formData = new FormData()
 
-      // Add the file
-      formData.append("file", {
-        uri: audioData.uri,
-        name: `audio.${fileType}`,
-        type: `audio/${fileType}`,
-      })
+      if (Platform.OS === 'web' && audioData.file) {
+        // For web, use the File object directly
+        formData.append('file', audioData.file)
+      } else {
+        // For mobile platforms
+        const fileUri = Platform.OS === 'android' 
+          ? audioData.uri 
+          : audioData.uri.replace('file://', '')
+        
+        formData.append('file', {
+          uri: fileUri,
+          type: audioData.type || 'audio/m4a',
+          name: 'audio.m4a'
+        })
+      }
 
       // Add other data
       formData.append("senderId", currentUserId)
       formData.append("receiverId", otherUserId)
       formData.append("messageType", "audio")
 
-      console.log(
-        "Sending form data:",
-        JSON.stringify({
-          senderId: currentUserId,
-          receiverId: otherUserId,
-          messageType: "audio",
-          fileInfo: {
-            uri: audioData.uri.substring(0, 50) + "...", // Truncate for logging
-            name: `audio.${fileType}`,
-            type: `audio/${fileType}`,
-          },
-        }),
-      )
+      console.log("Sending form data:", {
+        senderId: currentUserId,
+        receiverId: otherUserId,
+        messageType: "audio",
+        fileInfo: Platform.OS === 'web' ? {
+          type: audioData.file?.type,
+          size: audioData.file?.size
+        } : {
+          uri: audioData.uri,
+          type: audioData.type
+        }
+      })
 
       // Send to server
       const response = await fetch(`${SERVER_URL}/api/messages/media`, {
         method: "POST",
         body: formData,
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+        headers: Platform.OS === 'web' ? undefined : {
+          'Content-Type': 'multipart/form-data',
+        }
       })
 
       if (!response.ok) {

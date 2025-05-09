@@ -3,7 +3,7 @@
 import { Ionicons } from "@expo/vector-icons"
 import { Audio } from "expo-av"
 import { useEffect, useRef, useState } from "react"
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 
 const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
   const [recording, setRecording] = useState(null)
@@ -14,149 +14,333 @@ const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
   const [isPlaying, setIsPlaying] = useState(false)
   const timer = useRef(null)
   const [loading, setLoading] = useState(false)
+  const mediaRecorder = useRef(null)
+  const audioChunks = useRef([])
+  const audioStream = useRef(null)
+  const webAudioElement = useRef(null)
 
   useEffect(() => {
     // Clean up resources when component unmounts
     return () => {
       clearInterval(timer.current)
-      if (recording) {
-        const currentRecording = recording
-        setRecording(null)
-
-        // Use a try-catch to prevent unloading errors
-        try {
-          currentRecording.stopAndUnloadAsync()
-        } catch (error) {
-          console.log("Recording was already stopped or unloaded",error)
+      
+      // Clean up web audio resources
+      if (Platform.OS === 'web') {
+        if (audioStream.current) {
+          audioStream.current.getTracks().forEach(track => track.stop())
+          audioStream.current = null
         }
-      }
-
-      if (sound) {
-        const currentSound = sound
-        setSound(null)
-
-        try {
-          currentSound.unloadAsync()
-        } catch (error) {
-          console.log("Sound was already unloaded",error)
+        if (mediaRecorder.current) {
+          mediaRecorder.current = null
+        }
+        if (webAudioElement.current) {
+          webAudioElement.current.pause()
+          webAudioElement.current.src = ''
+        }
+        if (audioUri && audioUri.startsWith('blob:')) {
+          URL.revokeObjectURL(audioUri)
+        }
+        audioChunks.current = []
+      } else {
+        // Mobile cleanup
+        if (recording) {
+          const currentRecording = recording
+          setRecording(null)
+          try {
+            currentRecording.stopAndUnloadAsync()
+          } catch (error) {
+            console.log("Recording was already stopped or unloaded", error)
+          }
+        }
+        if (sound) {
+          const currentSound = sound
+          setSound(null)
+          try {
+            currentSound.unloadAsync()
+          } catch (error) {
+            console.log("Sound was already unloaded", error)
+          }
         }
       }
     }
-  }, [recording, sound])
+  }, [recording, sound, audioUri])
 
   const startRecording = async () => {
     try {
       setLoading(true)
-      
-      // Request permissions
-      const { status } = await Audio.requestPermissionsAsync()
-      if (status !== "granted") {
-        alert("Permission to access microphone is required!")
-        setLoading(false)
-        return
+      console.log('Starting recording on platform:', Platform.OS)
+
+      if (Platform.OS === 'web') {
+        try {
+          console.log('Requesting microphone permission...')
+          audioStream.current = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            } 
+          })
+          console.log('Microphone permission granted')
+          
+          const mimeType = 'audio/webm;codecs=opus'
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            console.warn('WebM not supported, falling back to default codec')
+            mediaRecorder.current = new MediaRecorder(audioStream.current)
+          } else {
+            mediaRecorder.current = new MediaRecorder(audioStream.current, {
+              mimeType: mimeType
+            })
+          }
+          
+          console.log('MediaRecorder created')
+          audioChunks.current = []
+
+          mediaRecorder.current.ondataavailable = (event) => {
+            console.log('Data available:', event.data.size, 'bytes')
+            if (event.data.size > 0) {
+              audioChunks.current.push(event.data)
+            }
+          }
+
+          mediaRecorder.current.onstop = () => {
+            console.log('Recording stopped, creating blob')
+            const audioBlob = new Blob(audioChunks.current, { 
+              type: mediaRecorder.current.mimeType 
+            })
+            console.log('Blob created:', audioBlob.size, 'bytes')
+            const audioUrl = URL.createObjectURL(audioBlob)
+            console.log('Blob URL created:', audioUrl)
+            setAudioUri(audioUrl)
+            setRecordingStatus("stopped")
+          }
+
+          // Request data every second
+          mediaRecorder.current.start(1000)
+          console.log('Recording started')
+          setRecordingStatus("recording")
+          setDuration(0)
+
+          const startTime = Date.now()
+          timer.current = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000)
+            setDuration(elapsed)
+          }, 1000)
+
+          setLoading(false)
+        } catch (error) {
+          console.error("Error in web recording:", error)
+          Alert.alert("Error", `Recording failed: ${error.message}`)
+          setLoading(false)
+        }
+      } else {
+        console.log('Starting mobile recording...')
+        const { status } = await Audio.requestPermissionsAsync()
+        console.log('Permission status:', status)
+        if (status !== "granted") {
+          alert("Permission to access microphone is required!")
+          setLoading(false)
+          return
+        }
+
+        console.log('Setting audio mode...')
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          interruptionModeAndroid: 1,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        })
+
+        if (timer.current) {
+          clearInterval(timer.current)
+        }
+
+        console.log('Creating recording...')
+        const recordingOptions = {
+          android: {
+            extension: '.m4a',
+            outputFormat: 4,
+            audioEncoder: 3,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+          },
+          ios: {
+            extension: '.m4a',
+            audioQuality: 0x7F,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+        }
+
+        const { recording } = await Audio.Recording.createAsync(recordingOptions)
+        console.log('Recording created')
+
+        setRecording(recording)
+        setRecordingStatus("recording")
+        setDuration(0)
+
+        const startTime = Date.now()
+        timer.current = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000)
+          setDuration(elapsed)
+        }, 1000)
       }
-
-      // Set audio mode with proper configuration for Android
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        interruptionModeAndroid: 1,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      })
-
-      // Clear any existing timer
-      if (timer.current) {
-        clearInterval(timer.current)
-      }
-
-      // Start recording
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      )
-
-      setRecording(recording)
-      setRecordingStatus("recording")
-      setDuration(0) // Reset duration
-
-      // Start timer
-      const startTime = Date.now()
-      timer.current = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000)
-        setDuration(elapsed)
-      }, 1000)
     } catch (error) {
-      console.error("Failed to start recording", error)
+      console.error("Failed to start recording:", error)
       setLoading(false)
       Alert.alert("Error", "Failed to start recording. Please try again.")
     }
   }
 
   const stopRecording = async () => {
-    if (!recording) return
+    console.log('Stopping recording on platform:', Platform.OS)
+    if (Platform.OS === 'web') {
+      if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
+        console.log('Stopping web recording')
+        mediaRecorder.current.stop()
+        if (audioStream.current) {
+          console.log('Stopping audio stream')
+          audioStream.current.getTracks().forEach(track => track.stop())
+        }
+        clearInterval(timer.current)
+      }
+    } else {
+      if (!recording) {
+        console.log('No active recording to stop')
+        return
+      }
 
-    try {
-      setRecordingStatus("stopping")
+      try {
+        console.log('Stopping mobile recording')
+        setRecordingStatus("stopping")
+        clearInterval(timer.current)
 
-      // Clear timer
-      clearInterval(timer.current)
+        const currentRecording = recording
+        setRecording(null)
 
-      // Make a copy of the recording reference
-      const currentRecording = recording
-      // Clear the recording state first
-      setRecording(null)
+        await currentRecording.stopAndUnloadAsync()
+        console.log('Recording stopped')
 
-      // Then stop it
-      await currentRecording.stopAndUnloadAsync()
+        const uri = currentRecording.getURI()
+        console.log('Recording URI:', uri)
+        setAudioUri(uri)
+        setRecordingStatus("stopped")
 
-      const uri = currentRecording.getURI()
-      setAudioUri(uri)
-      setRecordingStatus("stopped")
-
-      // Reset audio mode
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      })
-    } catch (error) {
-      console.error("Failed to stop recording", error)
-      // Even if there's an error, update the UI to reflect that we're not recording
-      setRecordingStatus("idle")
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+        })
+      } catch (error) {
+        console.error("Failed to stop recording:", error)
+        setRecordingStatus("idle")
+      }
     }
   }
 
   const playSound = async () => {
-    if (!audioUri) return
+    if (!audioUri) {
+      console.log('No audio URI available')
+      return
+    }
 
     try {
-      if (sound) {
-        await sound.unloadAsync()
-      }
+      console.log('Playing sound on platform:', Platform.OS)
+      console.log('Audio URI:', audioUri)
 
-      const { sound: newSound } = await Audio.Sound.createAsync({ uri: audioUri })
-      setSound(newSound)
+      if (Platform.OS === 'web') {
+        if (!webAudioElement.current) {
+          console.log('Creating new audio element')
+          webAudioElement.current = new Audio()
+        }
 
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
+        webAudioElement.current.src = audioUri
+        console.log('Set audio source:', audioUri)
+
+        webAudioElement.current.onended = () => {
+          console.log('Playback ended')
           setIsPlaying(false)
         }
-      })
+        webAudioElement.current.onpause = () => {
+          console.log('Playback paused')
+          setIsPlaying(false)
+        }
+        webAudioElement.current.onplay = () => {
+          console.log('Playback started')
+          setIsPlaying(true)
+        }
+        webAudioElement.current.onerror = (e) => {
+          console.error('Audio playback error:', e)
+          Alert.alert("Error", "Failed to play audio")
+        }
 
-      setIsPlaying(true)
-      await newSound.playAsync()
+        setSound(webAudioElement.current)
+        setIsPlaying(true)
+        try {
+          await webAudioElement.current.play()
+          console.log('Playback initiated')
+        } catch (error) {
+          console.error('Play failed:', error)
+          Alert.alert("Error", "Failed to start playback")
+        }
+      } else {
+        console.log('Creating sound object for mobile')
+        if (sound) {
+          console.log('Unloading previous sound')
+          await sound.unloadAsync()
+        }
+
+        console.log('Loading new sound')
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: audioUri },
+          { shouldPlay: true },
+          (status) => {
+            console.log('Playback status:', status)
+          }
+        )
+        
+        console.log('Sound created')
+        setSound(newSound)
+
+        newSound.setOnPlaybackStatusUpdate((status) => {
+          console.log('Playback status update:', status)
+          if (status.didJustFinish) {
+            console.log('Playback finished')
+            setIsPlaying(false)
+          }
+        })
+
+        setIsPlaying(true)
+        await newSound.playAsync()
+        console.log('Playback started')
+      }
     } catch (error) {
-      console.error("Failed to play sound", error)
+      console.error("Failed to play sound:", error)
+      Alert.alert("Error", "Failed to play audio. Please try again.")
     }
   }
 
   const pauseSound = async () => {
-    if (!sound) return
+    if (Platform.OS === 'web') {
+      // Web implementation
+      if (sound) {
+        sound.pause()
+        setIsPlaying(false)
+      }
+    } else {
+      // Mobile implementation (existing code)
+      if (!sound) return
 
-    try {
-      setIsPlaying(false)
-      await sound.pauseAsync()
-    } catch (error) {
-      console.error("Failed to pause sound", error)
+      try {
+        setIsPlaying(false)
+        await sound.pauseAsync()
+      } catch (error) {
+        console.error("Failed to pause sound", error)
+      }
     }
   }
 
@@ -175,7 +359,42 @@ const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
   }
 
   const handleSend = () => {
-    onAudioRecorded({ uri: audioUri, duration })
+    console.log('Handling send on platform:', Platform.OS)
+    if (Platform.OS === 'web') {
+      console.log('Preparing web audio for sending')
+      fetch(audioUri)
+        .then(res => res.blob())
+        .then(blob => {
+          console.log('Blob created:', blob.size, 'bytes')
+          const mimeType = mediaRecorder.current?.mimeType || 'audio/webm;codecs=opus'
+          const fileName = `recording-${Date.now()}.webm`
+          const file = new File([blob], fileName, { type: mimeType })
+          console.log('File created:', {
+            name: file.name,
+            type: file.type,
+            size: file.size
+          })
+          onAudioRecorded({ 
+            uri: audioUri, 
+            file,
+            duration,
+            type: mimeType,
+            name: fileName
+          })
+        })
+        .catch(error => {
+          console.error("Error converting blob to file:", error)
+          Alert.alert("Error", "Failed to prepare audio for sending.")
+        })
+    } else {
+      console.log('Sending mobile audio:', audioUri)
+      onAudioRecorded({ 
+        uri: audioUri, 
+        duration,
+        type: 'audio/m4a',
+        name: `recording-${Date.now()}.m4a`
+      })
+    }
   }
 
   const formatTime = (seconds) => {

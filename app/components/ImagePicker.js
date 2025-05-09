@@ -15,48 +15,48 @@ const ImagePicker = ({ onImageSelected, onCancel }) => {
       
       if (Platform.OS === 'web') {
         // Create an input element for file selection
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'image/*'
         
         // Create a promise to handle file selection
         const fileSelected = new Promise((resolve) => {
           input.onchange = (e) => {
-            const file = e.target.files[0];
-            resolve(file);
-          };
-        });
+            const file = e.target.files[0]
+            resolve(file)
+          }
+        })
         
         // Trigger file selection dialog
-        input.click();
+        input.click()
         
         // Wait for file selection
-        const file = await fileSelected;
+        const file = await fileSelected
         
         if (file) {
-          const imageUri = URL.createObjectURL(file);
+          const imageUri = URL.createObjectURL(file)
           console.log('Selected web image:', {
             uri: imageUri,
-            file: file
-          });
+            type: file.type,
+            name: file.name,
+            size: file.size
+          })
           
-          setImage(imageUri);
+          setImage(imageUri)
           onImageSelected({
             uri: imageUri,
             file: file,
             type: file.type,
             name: file.name
-          });
+          })
         }
-        
-        setLoading(false);
       } else {
         // Mobile platform code
-        const { status } = await ImagePickerExpo.requestMediaLibraryPermissionsAsync();
+        const { status } = await ImagePickerExpo.requestMediaLibraryPermissionsAsync()
         if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant camera roll permissions to select images.');
-          setLoading(false);
-          return;
+          Alert.alert('Permission needed', 'Please grant camera roll permissions to select images.')
+          setLoading(false)
+          return
         }
 
         const result = await ImagePickerExpo.launchImageLibraryAsync({
@@ -64,33 +64,46 @@ const ImagePicker = ({ onImageSelected, onCancel }) => {
           allowsEditing: true,
           aspect: [4, 3],
           quality: 0.8,
-        });
+        })
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
-          const selectedImage = result.assets[0];
-          console.log('Selected mobile image:', selectedImage);
-          setImage(selectedImage.uri);
+          const selectedImage = result.assets[0]
+          console.log('Selected mobile image:', {
+            uri: selectedImage.uri,
+            type: selectedImage.type || 'image/jpeg',
+            width: selectedImage.width,
+            height: selectedImage.height
+          })
+
+          const fileName = selectedImage.uri.split('/').pop() || `image-${Date.now()}.jpg`
+          
+          setImage(selectedImage.uri)
           onImageSelected({
             uri: selectedImage.uri,
             type: selectedImage.type || 'image/jpeg',
-            name: selectedImage.fileName || 'photo.jpg'
-          });
+            name: fileName
+          })
         }
       }
+      
+      setLoading(false)
     } catch (error) {
-      console.error("Error picking image:", error);
-      setLoading(false);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.error("Error picking image:", error)
+      setLoading(false)
+      Alert.alert('Error', 'Failed to pick image. Please try again.')
     }
   }
 
   const handleCancel = () => {
+    if (image && Platform.OS === 'web') {
+      URL.revokeObjectURL(image)
+    }
     setImage(null)
     onCancel()
   }
 
   const handleConfirm = () => {
-    if (!image) return;
+    if (!image) return
     
     // When confirming, pass the confirmed flag along with the image data
     onImageSelected({
@@ -99,9 +112,9 @@ const ImagePicker = ({ onImageSelected, onCancel }) => {
       // Keep any previously selected file data
       file: image.file,
       type: image.type || 'image/jpeg',
-      name: image.name || 'photo.jpg'
-    });
-  };
+      name: image.name || `image-${Date.now()}.jpg`
+    })
+  }
 
   return (
     <View style={styles.container}>
