@@ -3,7 +3,7 @@
 import { Ionicons } from "@expo/vector-icons"
 import { Audio } from "expo-av"
 import { useEffect, useRef, useState } from "react"
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 
 const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
   const [recording, setRecording] = useState(null)
@@ -13,6 +13,7 @@ const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
   const [sound, setSound] = useState(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const timer = useRef(null)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     // Clean up resources when component unmounts
@@ -45,32 +46,50 @@ const AudioRecorder = ({ onAudioRecorded, onCancel }) => {
 
   const startRecording = async () => {
     try {
+      setLoading(true)
+      
       // Request permissions
       const { status } = await Audio.requestPermissionsAsync()
       if (status !== "granted") {
         alert("Permission to access microphone is required!")
+        setLoading(false)
         return
       }
 
-      // Set audio mode
+      // Set audio mode with proper configuration for Android
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        interruptionModeAndroid: 1,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       })
 
+      // Clear any existing timer
+      if (timer.current) {
+        clearInterval(timer.current)
+      }
+
       // Start recording
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      )
 
       setRecording(recording)
       setRecordingStatus("recording")
+      setDuration(0) // Reset duration
 
       // Start timer
       const startTime = Date.now()
       timer.current = setInterval(() => {
-        setDuration(Math.floor((Date.now() - startTime) / 1000))
+        const elapsed = Math.floor((Date.now() - startTime) / 1000)
+        setDuration(elapsed)
       }, 1000)
     } catch (error) {
       console.error("Failed to start recording", error)
+      setLoading(false)
+      Alert.alert("Error", "Failed to start recording. Please try again.")
     }
   }
 

@@ -55,8 +55,8 @@ const ChatBubble = ({ message, isCurrentUser }) => {
         { uri: fullAudioUrl },
         { shouldPlay: true },
         (status) => {
-          if (status.didJustFinish) {
-            setIsPlaying(false)
+        if (status.didJustFinish) {
+          setIsPlaying(false)
           }
         }
       )
@@ -115,14 +115,14 @@ const ChatBubble = ({ message, isCurrentUser }) => {
               </Text>
             </View>
           ) : (
-            <Image
-              source={{
+          <Image
+            source={{
                 uri: content.startsWith("http") ? content : `${SERVER_URL}/${content.replace(/\\/g, '/')}`,
-              }}
-              style={styles.image}
-              resizeMode="cover"
+            }}
+            style={styles.image}
+            resizeMode="cover"
               onError={() => setImageError(true)}
-            />
+          />
           )}
           <Text style={[styles.timestamp, isCurrentUser ? styles.currentUserTimestamp : styles.otherUserTimestamp]}>
             {formattedTime}

@@ -315,12 +315,27 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
         // For web, use the actual File object
         formData.append('file', imageData.file)
       } else {
-        // For mobile, create a file object
+        // For mobile platforms
+        const fileUri = Platform.OS === 'android' 
+          ? imageData.uri 
+          : imageData.uri.replace('file://', '')
+        
+        // Get file name from URI
+        const fileName = fileUri.split('/').pop() || 'photo.jpg'
+        
+        // Create file object for mobile
         const file = {
-          uri: Platform.OS === "ios" ? imageData.uri.replace("file://", "") : imageData.uri,
+          uri: fileUri,
           type: imageData.type || 'image/jpeg',
-          name: imageData.name || 'photo.jpg'
+          name: fileName
         }
+        
+        console.log('Creating form data with file:', {
+          uri: fileUri,
+          type: file.type,
+          name: file.name
+        })
+        
         formData.append('file', file)
       }
 
@@ -333,13 +348,16 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
         senderId: currentUserId,
         receiverId: otherUserId,
         messageType: "image",
-        fileName: imageData.name || 'photo.jpg'
       })
 
       // Send to server
       const response = await fetch(`${SERVER_URL}/api/messages/media`, {
         method: "POST",
         body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
+        },
       })
 
       if (!response.ok) {
@@ -574,7 +592,7 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
 
       {/* Input Area - Always visible */}
       {!showImagePicker && !showAudioRecorder && (
-        <View style={styles.inputContainer}>
+      <View style={styles.inputContainer}>
           <View style={styles.mediaButtons}>
             <TouchableOpacity
               style={styles.mediaButton}
@@ -595,8 +613,8 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
               <Ionicons name="mic" size={24} color="#4CAF50" />
             </TouchableOpacity>
           </View>
-          <TextInput
-            style={styles.input}
+        <TextInput
+          style={styles.input}
             value={inputMessage}
             onChangeText={(text) => {
               setInputMessage(text)
@@ -612,8 +630,8 @@ const ChatScreen = ({ currentUserId, otherUserId, userType }) => {
             disabled={inputMessage.trim() === ""}
           >
             <Ionicons name="send" size={24} color={inputMessage.trim() === "" ? "#CCCCCC" : "white"} />
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+      </View>
       )}
     </KeyboardAvoidingView>
   )
